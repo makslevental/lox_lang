@@ -1,0 +1,12 @@
+[package]
+name = "crafting_interp"
+version = "0.1.0"
+authors = ["Maksim <maksim.levental@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pom = "3.1.0"
+lazy_static = "1.4.0"
+matches = "0.1.8"
