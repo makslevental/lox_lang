@@ -301,14 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn lex_int() {
-        let input: Vec<char> = "3 33".chars().collect();
-        let tokens = lexer().parse(&input);
-        println!("{:?}", tokens);
-        assert_eq!(tokens.unwrap(), vec![Token::Int(3), Token::Int(33)]);
-    }
-
-    #[test]
     fn lex_float() {
         let input: Vec<char> = "3.33".chars().collect();
         let tokens = lexer().parse(&input);

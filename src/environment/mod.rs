@@ -1,11 +1,13 @@
 use crate::lexer;
 use crate::parser::ast::Literal;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Debug, Default, Clone)]
 pub struct Environment {
     pub values: HashMap<String, Literal>,
-    pub enclosing: Option<Box<Environment>>,
+    pub enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Environment {
@@ -18,7 +20,8 @@ impl Environment {
             if self.values.contains_key(name) {
                 self.values.get(name.as_str()).unwrap().clone()
             } else if let Some(ref env) = self.enclosing {
-                env.get(&lexer::Token::Identifier(name.to_string()))
+                env.borrow()
+                    .get(&lexer::Token::Identifier(name.to_string()))
             } else {
                 panic!()
             }
@@ -31,7 +34,7 @@ impl Environment {
         if self.values.contains_key(name) {
             self.values.insert(name.to_owned(), value);
         } else if let Some(ref mut env) = self.enclosing {
-            env.assign(name, value)
+            env.borrow_mut().assign(name, value)
         } else {
             panic!()
         }

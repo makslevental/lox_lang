@@ -2,21 +2,19 @@
 extern crate lazy_static;
 
 #[allow(dead_code)]
+mod environment;
+#[allow(dead_code)]
 mod lexer;
 #[allow(dead_code)]
 mod parser;
-#[allow(dead_code)]
-mod environment;
-
 
 use std::env;
 use std::error::Error;
 use std::fs;
+use std::io;
+use std::io::{BufRead, Write};
 use std::path::Path;
 use std::process;
-use std::io;
-use std::io::{Write, BufRead};
-
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -45,7 +43,8 @@ fn run_prompt() -> Result<(), Box<dyn Error>> {
 
     loop {
         line.clear();
-        print!("{}", PROMPT); io::stdout().lock().flush()?;
+        print!("{}", PROMPT);
+        io::stdout().lock().flush()?;
 
         reader.read_line(&mut line)?;
         run(&line);
@@ -56,7 +55,6 @@ fn run(source: &String) {
     println!("{}", source)
 }
 
-fn error(line: usize, error:&str, message: &str) {
+fn error(line: usize, error: &str, message: &str) {
     eprintln!("[line {}] Error {}: {}", line, error, message)
 }
-

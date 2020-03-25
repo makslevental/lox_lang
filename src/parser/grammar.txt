@@ -1,18 +1,3 @@
-expression → assignment ;
-assignment → IDENTIFIER "=" assignment
-           | equality ;
-equality       → comparison ( ( "!=" | "==" ) comparison )* ;
-comparison     → addition ( ( ">" | ">=" | "<" | "<=" ) addition )* ;
-addition       → multiplication ( ( "-" | "+" ) multiplication )* ;
-multiplication → unary ( ( "/" | "*" ) unary )* ;
-unary          → ( "!" | "-" ) unary | primary ;
-primary → "true" | "false" | "nil"
-        | NUMBER | STRING
-        | "(" expression ")"
-        | IDENTIFIER ;
-
-
-
 program     → declaration* EOF ;
 
 declaration → varDecl
@@ -21,7 +6,35 @@ declaration → varDecl
 varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
 
 statement   → exprStmt
+            | forStmt ;
+            | ifStmt ;
             | printStmt ;
+            | whileStmt ;
             | block ;
 exprStmt  → expression ";" ;
+forStmt   → "for" "(" ( varDecl | exprStmt | ";" )
+                      expression? ";"
+                      expression? ")" statement ;
+ifStmt    → "if" "(" expression ")" statement ( "else" statement )? ;
 printStmt → "print" expression ";" ;
+whileStmt → "while" "(" expression ")" statement ;
+block     → "{" declaration* "}" ;
+
+
+expression → assignment ;
+assignment → identifier "=" assignment
+           | logic_or ;
+logic_or   → logic_and ( "or" logic_and )* ;
+logic_and  → equality ( "and" equality )* ;
+
+
+equality       → comparison ( ( "!=" | "==" ) comparison )* ;
+comparison     → addition ( ( ">" | ">=" | "<" | "<=" ) addition )* ;
+
+addition       → multiplication ( ( "-" | "+" ) multiplication )* ;
+multiplication → unary ( ( "/" | "*" ) unary )* ;
+unary          → ( "!" | "-" ) unary | primary ;
+primary → "true" | "false" | "nil"
+        | NUMBER | STRING
+        | "(" expression ")"
+        | IDENTIFIER ;

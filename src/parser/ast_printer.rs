@@ -1,4 +1,4 @@
-use crate::parser::ast::{Expr, ExprVisitor, Literal, ExprData};
+use crate::parser::ast::{Expr, ExprData, ExprVisitor, Literal};
 
 pub struct AstPrinter;
 
@@ -94,11 +94,11 @@ impl ExprVisitor for AstPrinter {
 }
 #[cfg(test)]
 mod tests {
+    use super::AstPrinter;
     use crate::environment::Environment;
     use crate::lexer::{Operator, Token};
     use crate::parser::ast::{Expr, Literal, Stmt};
-    use crate::parser::interpreter::{Interpreter};
-    use super::AstPrinter;
+    use crate::parser::interpreter::Interpreter;
 
     #[test]
     fn print() {

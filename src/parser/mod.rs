@@ -1,7 +1,7 @@
 pub mod ast;
+mod ast_printer;
 pub mod interpreter;
 pub mod parser;
-mod ast_printer;
 
 #[cfg(test)]
 mod tests {
@@ -24,6 +24,6 @@ mod tests {
         (Interpreter {
             environment: Default::default(),
         })
-        .interpret(&p.parse_stmts());
+        .interpret(&p.parse());
     }
 }

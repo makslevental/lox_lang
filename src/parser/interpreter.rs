@@ -4,10 +4,14 @@ use crate::lexer::Operator;
 use crate::parser::ast::Literal::Nil;
 use crate::parser::ast::{Expr, ExprData, ExprVisitor, Literal, Stmt, StmtData, StmtVisitor};
 use pom::range::Bound::Excluded;
-
+use std::cell::RefCell;
+use std::io::Write;
+use std::option::Option::Some;
+use std::rc::Rc;
+use std::{thread, time};
 
 pub struct Interpreter {
-    pub environment: Environment,
+    pub environment: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
@@ -26,7 +30,8 @@ impl Interpreter {
     }
 
     pub fn execute_block(&mut self, stmts: &[Stmt], environment: Environment) {
-        let previous_env = std::mem::replace(&mut self.environment, environment);
+        let previous_env =
+            std::mem::replace(&mut self.environment, Rc::new(RefCell::new(environment)));
         for stmt in stmts {
             self.execute(stmt)
         }
@@ -47,18 +52,18 @@ impl ExprVisitor for Interpreter {
             return if *operator == Operator::Minus {
                 match right {
                     Literal::Float(l) => Literal::Float(-l),
-                    _ => panic!(),
+                    _ => panic!("{:?}", right),
                 }
             } else if *operator == Operator::Not {
                 match right {
                     Literal::Bool(b) => Literal::Bool(!b),
-                    _ => panic!(),
+                    _ => panic!("{:?}", right),
                 }
             } else {
-                panic!()
+                panic!("{:?}", operator)
             };
         }
-        panic!()
+        panic!("{:?}", expr)
     }
 
     fn visit_binary(&mut self, expr: &Expr) -> Self::Result {
@@ -72,11 +77,10 @@ impl ExprVisitor for Interpreter {
                 if let Literal::String(right) = self.evaluate(right) {
                     return match operator {
                         Operator::Plus => Literal::String(left + right.as_str()),
-                        _ => panic!(),
+                        _ => panic!("{:?}", operator),
                     };
                 }
             }
-
             if let Literal::Float(left) = self.evaluate(left) {
                 if let Literal::Float(right) = self.evaluate(right) {
                     return match operator {
@@ -92,16 +96,16 @@ impl ExprVisitor for Interpreter {
                         Operator::LessThan => Literal::Bool(left < right),
                         Operator::And => Literal::Bool(left > 0.0 && right > 0.0),
                         Operator::Or => Literal::Bool(left > 0.0 || right > 0.0),
-                        _ => panic!(),
+                        _ => panic!("{:?}", operator),
                     };
                 }
             }
         }
-        panic!()
+        panic!("{:?}", expr)
     }
 
     fn visit_logical(&mut self, expr: &Expr) -> Self::Result {
-        if let Expr::Binary {
+        if let Expr::Logical {
             left,
             operator,
             right,
@@ -112,12 +116,12 @@ impl ExprVisitor for Interpreter {
                     return match operator {
                         Operator::And => Literal::Bool(left && right),
                         Operator::Or => Literal::Bool(left || right),
-                        _ => panic!(),
+                        _ => panic!("{:?}", operator),
                     };
                 }
             }
         }
-        panic!()
+        panic!("{:?}", expr)
     }
 
     fn visit_grouping(&mut self, expr: &Expr) -> Self::Result {
@@ -127,19 +131,19 @@ impl ExprVisitor for Interpreter {
     fn visit_assign(&mut self, expr: &Expr) -> Self::Result {
         if let Expr::Assign { name, value } = expr {
             if let lexer::Token::Identifier(name) = name {
-                let value = self.evaluate(expr);
-                self.environment.assign(name, value.clone());
+                let value = self.evaluate(value);
+                self.environment.borrow_mut().assign(name, value.clone());
                 return value;
             }
         }
-        panic!()
+        panic!("{:?}", expr)
     }
 
     fn visit_variable(&mut self, expr: &Expr) -> Self::Result {
         if let Expr::Variable { name } = expr {
-            return self.environment.get(name);
+            return self.environment.borrow().get(name);
         }
-        panic!()
+        panic!("{:?}", expr)
     }
 }
 
@@ -148,7 +152,7 @@ impl StmtVisitor for Interpreter {
         if let Stmt::Expr(expr) = stmt {
             self.evaluate(expr);
         } else {
-            panic!()
+            panic!("{:?}", stmt)
         }
     }
 
@@ -161,7 +165,7 @@ impl StmtVisitor for Interpreter {
                 Literal::Nil(l) => println!("{:?}", l),
             }
         } else {
-            panic!()
+            panic!("{:?}", stmt)
         }
     }
 
@@ -173,16 +177,52 @@ impl StmtVisitor for Interpreter {
                 if *initializer != Expr::L(Literal::Nil(())) {
                     value = self.evaluate(initializer);
                 }
-                self.environment.define(name, value);
+                self.environment.borrow_mut().define(name, value);
                 return;
             }
         }
-        panic!()
+        panic!("{:?}", stmt)
     }
 
     fn visit_block(&mut self, stmt: &Stmt) {
         if let Stmt::Block(stmts) = stmt {
-            self.execute_block(stmts, Environment { values: Default::default(), enclosing: Some(Box::new(self.environment.clone())) })
+            self.execute_block(
+                stmts,
+                Environment {
+                    values: Default::default(),
+                    enclosing: Some(self.environment.clone()),
+                },
+            )
+        }
+    }
+
+    fn visit_if(&mut self, stmt: &Stmt) {
+        if let Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+        } = stmt
+        {
+            if let Literal::Bool(true) = self.evaluate(condition) {
+                self.execute(then_branch)
+            } else if let Some(else_branch) = else_branch {
+                self.execute(else_branch)
+            }
+        } else {
+            panic!("{:?}", stmt);
+        }
+    }
+
+    fn visit_while(&mut self, stmt: &Stmt) {
+        let ten_millis = time::Duration::from_millis(10);
+        if let Stmt::While { condition, body } = stmt {
+            while let Literal::Bool(true) = self.evaluate(condition) {
+                std::io::stdout().lock().flush();
+                self.execute(body);
+                thread::sleep(ten_millis);
+            }
+        } else {
+            panic!("{:?}", stmt);
         }
     }
 }
@@ -190,11 +230,10 @@ impl StmtVisitor for Interpreter {
 #[cfg(test)]
 mod tests {
     use crate::environment::Environment;
-    use crate::lexer::{Operator, Token, lexer};
+    use crate::lexer::{lexer, Operator, Token};
     use crate::parser::ast::{Expr, Literal, Stmt};
     use crate::parser::interpreter::Interpreter;
     use crate::parser::parser::Parser;
-
 
     #[test]
     fn string() {
@@ -206,7 +245,10 @@ mod tests {
             right: Box::new(Expr::L(Literal::String(y))),
         });
 
-        (Interpreter { environment: Default::default() }).interpret(&[Stmt::Expr(expr)]);
+        (Interpreter {
+            environment: Default::default(),
+        })
+        .interpret(&[Stmt::Expr(expr)]);
 
         let x = 1.0;
         let y = 2.0;
@@ -216,7 +258,10 @@ mod tests {
             right: Box::new(Expr::L(Literal::Float(y))),
         });
 
-        (Interpreter { environment: Default::default() }).interpret(&[Stmt::Expr(expr)]);
+        (Interpreter {
+            environment: Default::default(),
+        })
+        .interpret(&[Stmt::Expr(expr)]);
     }
 
     #[test]
@@ -257,7 +302,7 @@ mod tests {
         (Interpreter {
             environment: Default::default(),
         })
-            .interpret(&[print]);
+        .interpret(&[print]);
     }
 
     #[test]
@@ -265,14 +310,16 @@ mod tests {
         let input: Vec<char> = "
             var a = \"global a\";
             print a;
-        ".chars().collect();
+        "
+        .chars()
+        .collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
-        let e = p.parse_stmts();
+        let e = p.parse();
         (Interpreter {
             environment: Default::default(),
         })
-            .interpret(e.as_ref());
+        .interpret(e.as_ref());
     }
 
     #[test]
@@ -297,11 +344,148 @@ mod tests {
             print a;
             print b;
             print c;
-        "#.chars().collect();
+        "#
+        .chars()
+        .collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
-        let e = p.parse_stmts();
+        let e = p.parse();
+        (Interpreter {
+            environment: Default::default(),
+        })
+        .interpret(e.as_ref());
+    }
+
+    #[test]
+    fn interpret_if() {
+        let input: Vec<char> = r#"
+            var a = 5;
+            var b = 6;
+            if (a < b) {
+                print "hello";
+            } else {
+                print "world";
+            }
+
+            if (a <= b) {
+                print "second";
+            }
+
+            print a;
+            if (a < 10) {
+                print a;
+                a = 11;
+            }
+            print a;
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        (Interpreter {
+            environment: Default::default(),
+        })
+        .interpret(e.as_ref());
+    }
+
+    #[test]
+    fn interpret_comparison() {
+        let input: Vec<char> = r#"
+            var a = 5;
+            var b = 6;
+            print a;
+            print b;
+            print a < b;
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
         println!("{:#?}", e);
+        (Interpreter {
+            environment: Default::default(),
+        })
+        .interpret(e.as_ref());
+    }
+
+    #[test]
+    fn interpret_logical() {
+        let input: Vec<char> = r#"
+            var a = 5;
+            var b = 6;
+            print a;
+            print b;
+            print a < b or false;
+            print a < b and false;
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        println!("{:?}", e);
+        (Interpreter {
+            environment: Default::default(),
+        })
+        .interpret(e.as_ref());
+    }
+
+    #[test]
+    fn interpret_assign() {
+        let input: Vec<char> = r#"
+            var a = 5;
+            print a;
+            a = a + 1;
+            print a;
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        (Interpreter {
+            environment: Default::default(),
+        })
+        .interpret(e.as_ref());
+    }
+
+    #[test]
+    fn interpret_while() {
+        let input: Vec<char> = r#"
+            var a = 5;
+            print a;
+            while (a < 10) {
+                print a;
+                a = a + 1;
+            }
+            print a;
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        (Interpreter {
+            environment: Default::default(),
+        })
+        .interpret(e.as_ref());
+    }
+
+
+    #[test]
+    fn intepret_for() {
+        let input: Vec<char> = r#"
+            for (var i = 0; i < 10; i = i + 1) {
+                print i;
+            }
+        "#
+            .chars()
+            .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
         (Interpreter {
             environment: Default::default(),
         })

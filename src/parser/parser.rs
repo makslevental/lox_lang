@@ -1,9 +1,9 @@
 use crate::lexer;
-use crate::lexer::Operator;
+use crate::lexer::{Operator, Token};
 use crate::parser::ast;
 use crate::parser::ast::Stmt;
+use crate::parser::ast::Stmt::{Block, Expr};
 use crate::parser::interpreter::Interpreter;
-use crate::parser::ast::Stmt::Block;
 
 pub struct Parser {
     tokens: Vec<lexer::Token>,
@@ -15,11 +15,7 @@ impl Parser {
         Parser { tokens, current: 0 }
     }
 
-    pub fn parse_expr(&mut self) -> ast::Expr {
-        self.expression()
-    }
-
-    pub fn parse_stmts(&mut self) -> Vec<ast::Stmt> {
+    pub fn parse(&mut self) -> Vec<ast::Stmt> {
         let mut statements: Vec<ast::Stmt> = Vec::new();
         while self.current < self.tokens.len() {
             statements.push(self.delaration());
@@ -28,14 +24,108 @@ impl Parser {
     }
 
     pub fn statement(&mut self) -> ast::Stmt {
-        if self.tokens.get(self.current).unwrap().clone() == lexer::Token::Print {
+        if self.tokens.get(self.current).unwrap().clone() == lexer::Token::For {
+            self.current += 1;
+            return self.for_stmt();
+        } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::If {
+            self.current += 1;
+            return self.if_stmt();
+        } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::Print {
             self.current += 1;
             return self.print();
+        } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::While {
+            self.current += 1;
+            return self.while_stmt();
         } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::LeftBrace {
             self.current += 1;
             return Block(self.block());
         }
         self.expr_stmt()
+    }
+
+    pub fn for_stmt(&mut self) -> ast::Stmt {
+        self.consume(Token::LeftParen);
+        let mut initializer = None;
+        let mut condition = None;
+        let mut increment = None;
+        if let Some(token) = self.tokens.get(self.current) {
+            if token == &lexer::Token::Semicolon {
+                self.current += 1;
+            } else if token == &lexer::Token::Var {
+                self.current += 1;
+                initializer = Some(self.var_decl());
+            } else {
+                initializer = Some(self.expr_stmt());
+            }
+
+            if let Some(token) = self.tokens.get(self.current) {
+                if token != &lexer::Token::Semicolon {
+                    condition = Some(self.expression());
+                }
+            }
+            self.consume(lexer::Token::Semicolon);
+
+            if let Some(token) = self.tokens.get(self.current) {
+                if token != &lexer::Token::RightParen {
+                    increment = Some(self.expression());
+                }
+            }
+            self.consume(lexer::Token::RightParen);
+            let mut body = self.statement();
+
+            if let Some(increment) = increment {
+                body = Stmt::Block(vec![body, Stmt::Expr(Box::new(increment))])
+            }
+
+            if let Some(condition) = condition {
+                body = Stmt::While { condition: Box::new(condition), body: Box::new(body) }
+            }
+
+            if let Some(initializer) = initializer {
+                body = Stmt::Block(vec![initializer, body])
+            }
+            return body;
+        } else {
+            panic!()
+        }
+    }
+
+    pub fn if_stmt(&mut self) -> ast::Stmt {
+        self.consume(Token::LeftParen);
+        let condition = self.expression();
+        self.consume(Token::RightParen);
+
+        let then_branch = self.statement();
+        let mut else_branch = None;
+        if let Some(token) = self.tokens.get(self.current) {
+            if token == &lexer::Token::Else {
+                self.current += 1;
+                else_branch = Some(Box::new(self.statement()));
+            }
+        }
+        ast::Stmt::If {
+            condition: Box::new(condition),
+            then_branch: Box::new(then_branch),
+            else_branch: else_branch,
+        }
+    }
+
+    pub fn while_stmt(&mut self) -> ast::Stmt {
+        self.consume(Token::LeftParen);
+        let condition = self.expression();
+        self.consume(Token::RightParen);
+
+        let body = self.statement();
+        ast::Stmt::While {
+            condition: Box::new(condition),
+            body: Box::new(body),
+        }
+    }
+
+    pub fn print(&mut self) -> ast::Stmt {
+        let value = self.expression();
+        self.consume(lexer::Token::Semicolon);
+        ast::Stmt::Print(Box::new(value))
     }
 
     pub fn block(&mut self) -> Vec<ast::Stmt> {
@@ -55,12 +145,6 @@ impl Parser {
             return self.var_decl();
         }
         self.statement()
-    }
-
-    pub fn print(&mut self) -> ast::Stmt {
-        let value = self.expression();
-        self.consume(lexer::Token::Semicolon);
-        ast::Stmt::Print(Box::new(value))
     }
 
     pub fn expr_stmt(&mut self) -> ast::Stmt {
@@ -95,7 +179,7 @@ impl Parser {
     }
 
     pub fn assignment(&mut self) -> ast::Expr {
-        let expr = self.equality();
+        let expr = self.or();
         if self.tokens.get(self.current).unwrap() == &lexer::Token::Assign {
             self.current += 1;
             let value = self.assignment();
@@ -107,6 +191,38 @@ impl Parser {
                 };
             }
             panic!()
+        }
+        expr
+    }
+
+    pub fn or(&mut self) -> ast::Expr {
+        let mut expr = self.and();
+        while self.current < self.tokens.len()
+            && self.tokens.get(self.current).unwrap().clone() == lexer::Token::O(Operator::Or)
+        {
+            self.current += 1;
+            let right = self.and();
+            expr = ast::Expr::Logical {
+                left: Box::new(expr),
+                operator: Operator::Or,
+                right: Box::new(right),
+            }
+        }
+        expr
+    }
+
+    pub fn and(&mut self) -> ast::Expr {
+        let mut expr = self.equality();
+        while self.current < self.tokens.len()
+            && self.tokens.get(self.current).unwrap().clone() == lexer::Token::O(Operator::And)
+        {
+            self.current += 1;
+            let right = self.and();
+            expr = ast::Expr::Logical {
+                left: Box::new(expr),
+                operator: Operator::And,
+                right: Box::new(right),
+            }
         }
         expr
     }
@@ -257,7 +373,11 @@ impl Parser {
         if self.tokens.get(self.current).unwrap().clone() == token {
             self.current += 1;
         } else {
-            panic!()
+            panic!(
+                "token {:?} current {:?}",
+                token,
+                self.tokens.get(self.current)
+            )
         }
     }
 
@@ -273,7 +393,7 @@ mod tests {
 
     #[test]
     fn parse_test() {
-        let input: Vec<char> = "nil".chars().collect();
+        let input: Vec<char> = "nil;".chars().collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.expression();
@@ -285,7 +405,7 @@ mod tests {
         let input: Vec<char> = "print 5;".chars().collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
-        let e = p.parse_stmts();
+        let e = p.parse();
         println!("{:#?}", e);
     }
 
@@ -294,16 +414,68 @@ mod tests {
         let input: Vec<char> = "var x = 5;".chars().collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
-        let e = p.parse_stmts();
+        let e = p.parse();
         println!("{:#?}", e);
     }
 
     #[test]
-    fn parse_parse_block() {
+    fn parse_block() {
         let input: Vec<char> = "{var x = 5;} {var y = 10;} {print y;}".chars().collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
-        let e = p.parse_stmts();
+        let e = p.parse();
         println!("{:#?}", e);
     }
+
+    #[test]
+    fn parse_if() {
+        let input: Vec<char> = "if (x < 5) { print x; } else { print 5; }"
+            .chars()
+            .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        println!("{:#?}", e);
+    }
+
+    #[test]
+    fn parse_logical() {
+        let input: Vec<char> = "a and b or c;".chars().collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        println!("{:#?}", e);
+    }
+
+    #[test]
+    fn parse_assign() {
+        let input: Vec<char> = r#"
+            var a = 5;
+            print a;
+            a = a + 1;
+            print a;
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        println!("{:#?}", e);
+    }
+
+    #[test]
+    fn parse_for() {
+        let input: Vec<char> = r#"
+            for (var i = 0; i < 10; i = i + 1) {
+                print i;
+            }
+        "#
+            .chars()
+            .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        println!("{:#?}", e);
+    }
+
 }

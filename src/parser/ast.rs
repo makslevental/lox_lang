@@ -9,6 +9,8 @@ pub trait StmtVisitor {
     fn visit_print_stmt(&mut self, stmt: &Stmt);
     fn visit_var_stmt(&mut self, stmt: &Stmt);
     fn visit_block(&mut self, stmt: &Stmt);
+    fn visit_if(&mut self, stmt: &Stmt);
+    fn visit_while(&mut self, stmt: &Stmt);
 }
 
 #[derive(Debug)]
@@ -20,6 +22,15 @@ pub enum Stmt {
         initializer: Box<Expr>,
     },
     Block(Vec<Stmt>),
+    If {
+        condition: Box<Expr>,
+        then_branch: Box<Stmt>,
+        else_branch: Option<Box<Stmt>>,
+    },
+    While {
+        condition: Box<Expr>,
+        body: Box<Stmt>,
+    }
 }
 
 impl StmtData for Stmt {
@@ -29,6 +40,8 @@ impl StmtData for Stmt {
             s @ Stmt::Print(_) => visitor.visit_print_stmt(s),
             s @ Stmt::Variable { .. } => visitor.visit_var_stmt(s),
             s @ Stmt::Block(_) => visitor.visit_block(s),
+            s @ Stmt::If { .. } => visitor.visit_if(s),
+            s @ Stmt::While { .. } => visitor.visit_while(s),
         }
     }
 }
