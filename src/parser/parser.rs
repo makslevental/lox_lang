@@ -3,6 +3,7 @@ use crate::lexer::Operator;
 use crate::parser::ast;
 use crate::parser::ast::Stmt;
 use crate::parser::interpreter::Interpreter;
+use crate::parser::ast::Stmt::Block;
 
 pub struct Parser {
     tokens: Vec<lexer::Token>,
@@ -21,20 +22,20 @@ impl Parser {
     pub fn parse_stmts(&mut self) -> Vec<ast::Stmt> {
         let mut statements: Vec<ast::Stmt> = Vec::new();
         while self.current < self.tokens.len() {
-            statements.append(self.statement().as_mut());
+            statements.push(self.delaration());
         }
         statements
     }
 
-    pub fn statement(&mut self) -> Vec<ast::Stmt> {
+    pub fn statement(&mut self) -> ast::Stmt {
         if self.tokens.get(self.current).unwrap().clone() == lexer::Token::Print {
             self.current += 1;
-            return vec![self.print()];
+            return self.print();
         } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::LeftBrace {
             self.current += 1;
-            return self.block();
+            return Block(self.block());
         }
-        vec![self.expr_stmt()]
+        self.expr_stmt()
     }
 
     pub fn block(&mut self) -> Vec<ast::Stmt> {
@@ -53,7 +54,7 @@ impl Parser {
             self.current += 1;
             return self.var_decl();
         }
-        self.statement().pop().unwrap()
+        self.statement()
     }
 
     pub fn print(&mut self) -> ast::Stmt {
@@ -243,7 +244,7 @@ impl Parser {
                 lexer::Token::Nil(n) => ast::Expr::L(ast::Literal::Nil(n)),
                 lexer::Token::Float(f) => ast::Expr::L(ast::Literal::Float(f)),
                 lexer::Token::String(s) => ast::Expr::L(ast::Literal::String(s)),
-                _ => panic!(),
+                _ => panic!("{:?}", cur),
             }
         }
     }

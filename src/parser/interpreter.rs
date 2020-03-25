@@ -24,6 +24,14 @@ impl Interpreter {
     pub fn execute(&mut self, stmt: &Stmt) {
         stmt.accept(self)
     }
+
+    pub fn execute_block(&mut self, stmts: &[Stmt], environment: Environment) {
+        let previous_env = std::mem::replace(&mut self.environment, environment);
+        for stmt in stmts {
+            self.execute(stmt)
+        }
+        std::mem::replace(&mut self.environment, previous_env);
+    }
 }
 
 impl ExprVisitor for Interpreter {
@@ -173,16 +181,19 @@ impl StmtVisitor for Interpreter {
     }
 
     fn visit_block(&mut self, stmt: &Stmt) {
-        unimplemented!()
+        if let Stmt::Block(stmts) = stmt {
+            self.execute_block(stmts, Environment { values: Default::default(), enclosing: Some(Box::new(self.environment.clone())) })
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::environment::Environment;
-    use crate::lexer::{Operator, Token};
+    use crate::lexer::{Operator, Token, lexer};
     use crate::parser::ast::{Expr, Literal, Stmt};
-    use crate::parser::interpreter::{Interpreter};
+    use crate::parser::interpreter::Interpreter;
+    use crate::parser::parser::Parser;
 
 
     #[test]
@@ -246,6 +257,54 @@ mod tests {
         (Interpreter {
             environment: Default::default(),
         })
-        .interpret(&[print]);
+            .interpret(&[print]);
+    }
+
+    #[test]
+    fn interpret_var() {
+        let input: Vec<char> = "
+            var a = \"global a\";
+            print a;
+        ".chars().collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse_stmts();
+        (Interpreter {
+            environment: Default::default(),
+        })
+            .interpret(e.as_ref());
+    }
+
+    #[test]
+    fn interpret_blocks() {
+        let input: Vec<char> = r#"
+            var a = "global a";
+            var b = "global b";
+            var c = "global c";
+            {
+              var a = "outer a";
+              var b = "outer b";
+              {
+                var a = "inner a";
+                print a;
+                print b;
+                print c;
+              }
+              print a;
+              print b;
+              print c;
+            }
+            print a;
+            print b;
+            print c;
+        "#.chars().collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse_stmts();
+        println!("{:#?}", e);
+        (Interpreter {
+            environment: Default::default(),
+        })
+            .interpret(e.as_ref());
     }
 }

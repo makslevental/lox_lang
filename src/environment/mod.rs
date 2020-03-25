@@ -2,10 +2,10 @@ use crate::lexer;
 use crate::parser::ast::Literal;
 use std::collections::HashMap;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Environment {
-    values: HashMap<String, Literal>,
-    enclosing: Option<Box<Environment>>,
+    pub values: HashMap<String, Literal>,
+    pub enclosing: Option<Box<Environment>>,
 }
 
 impl Environment {
@@ -15,9 +15,13 @@ impl Environment {
 
     pub fn get(&self, name: &lexer::Token) -> Literal {
         if let lexer::Token::Identifier(name) = name {
-            self.values.get(name.as_str()).unwrap().clone()
-        } else if let Some(ref env) = self.enclosing {
-            env.get(name)
+            if self.values.contains_key(name) {
+                self.values.get(name.as_str()).unwrap().clone()
+            } else if let Some(ref env) = self.enclosing {
+                env.get(&lexer::Token::Identifier(name.to_string()))
+            } else {
+                panic!()
+            }
         } else {
             panic!()
         }
