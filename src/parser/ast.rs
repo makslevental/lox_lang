@@ -36,8 +36,8 @@ pub enum Stmt {
         name: lexer::Token,
         parameters: Option<Vec<lexer::Token>>,
         body: Box<Stmt>,
-        ret: Option<Box<Expr>>
-    }
+        ret: Option<Box<Expr>>,
+    },
 }
 
 impl StmtData for Stmt {

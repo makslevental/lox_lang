@@ -60,19 +60,15 @@ impl ExprVisitor for Interpreter {
         if let Expr::Unary { operator, right } = expr {
             let right = self.evaluate(right);
             if *operator == Operator::Minus {
-                return right.map(|r|
-                    match r {
-                        Object::L(Literal::Float(l)) => Object::L(Literal::Float(-l)),
-                        _ => panic!("{:?}", r)
-                    }
-                )
+                return right.map(|r| match r {
+                    Object::L(Literal::Float(l)) => Object::L(Literal::Float(-l)),
+                    _ => panic!("{:?}", r),
+                });
             } else if *operator == Operator::Not {
-                return right.map(|r|
-                    match r {
-                        Object::L(Literal::Bool(b)) => Object::L(Literal::Bool(!b)),
-                        _ => panic!("{:?}", r)
-                    }
-                )
+                return right.map(|r| match r {
+                    Object::L(Literal::Bool(b)) => Object::L(Literal::Bool(!b)),
+                    _ => panic!("{:?}", r),
+                });
             } else {
                 panic!("{:?}", operator)
             };
@@ -157,7 +153,7 @@ impl ExprVisitor for Interpreter {
 
     fn visit_variable(&mut self, expr: &Expr) -> Option<Self::Result> {
         if let Expr::Variable { name } = expr {
-            return Some(self.environment.borrow_mut().get(name))
+            return Some(self.environment.borrow_mut().get(name));
         }
         panic!("{:?}", expr)
     }
@@ -170,7 +166,11 @@ impl ExprVisitor for Interpreter {
                     args.push(self.evaluate(argument))
                 }
                 if args.len() != callee.arity() {
-                    panic!("wrong number of args {:?} {:?}", arguments.len(), callee.arity())
+                    panic!(
+                        "wrong number of args {:?} {:?}",
+                        arguments.len(),
+                        callee.arity()
+                    )
                 }
                 return callee.call(self, args.into_iter().map(|o| o.unwrap()).collect());
             }
@@ -195,7 +195,7 @@ impl StmtVisitor for Interpreter {
                 Object::L(Literal::Bool(l)) => println!("{:?}", l),
                 Object::L(Literal::String(l)) => println!("{:?}", l),
                 Object::L(Literal::Nil(l)) => println!("{:?}", l),
-                Object::C(c) => println!("{:?}", c)
+                Object::C(c) => println!("{}", c),
             }
         } else {
             panic!("{:?}", stmt)
@@ -258,13 +258,16 @@ impl StmtVisitor for Interpreter {
     }
 
     fn visit_function(&mut self, stmt: &Stmt) {
-        if let Stmt::Function { name, parameters, ..} = stmt {
+        if let Stmt::Function {
+            name, parameters, ..
+        } = stmt
+        {
             if let lexer::Token::Identifier(name_str) = name {
                 let s = stmt.clone();
-                let f = callable::Function {
-                    declaration: s
-                };
-                self.environment.borrow_mut().define(name_str, Object::C(Rc::new(f)))
+                let f = callable::Function { declaration: s };
+                self.environment
+                    .borrow_mut()
+                    .define(name_str, Object::C(Rc::new(f)))
             }
         } else {
             panic!("{:?}", stmt);
@@ -509,8 +512,8 @@ mod tests {
                 print a + b + c + d;
             }
         "#
-            .chars()
-            .collect();
+        .chars()
+        .collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();

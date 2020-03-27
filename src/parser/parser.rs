@@ -97,7 +97,6 @@ impl Parser {
         }
     }
 
-
     pub fn if_stmt(&mut self) -> ast::Stmt {
         self.consume(Token::LeftParen);
         let condition = self.expression();
@@ -178,11 +177,15 @@ impl Parser {
             }
             self.consume(lexer::Token::RightParen);
             let body = self.statement();
-            return ast::Stmt::Function { name: lexer::Token::Identifier(name), parameters: Some(params), body: Box::new(body), ret: None }
+            return ast::Stmt::Function {
+                name: lexer::Token::Identifier(name),
+                parameters: Some(params),
+                body: Box::new(body),
+                ret: None,
+            };
         }
         panic!("{:?}", self.tokens.get(self.current).unwrap().clone())
     }
-
 
     pub fn var_decl(&mut self) -> ast::Stmt {
         if let lexer::Token::Identifier(name) = self.tokens.get(self.current).unwrap().clone() {
@@ -544,14 +547,13 @@ mod tests {
         println!("{:#?}", e);
     }
 
-
     #[test]
     fn clock() {
         let input: Vec<char> = r#"
             clock();
         "#
-            .chars()
-            .collect();
+        .chars()
+        .collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();
@@ -566,8 +568,8 @@ mod tests {
                 print a + b + c + d;
             }
         "#
-            .chars()
-            .collect();
+        .chars()
+        .collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();
