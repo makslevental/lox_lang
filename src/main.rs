@@ -4,6 +4,8 @@ extern crate lazy_static;
 #[allow(dead_code)]
 mod environment;
 #[allow(dead_code)]
+mod interpreter;
+#[allow(dead_code)]
 mod lexer;
 #[allow(dead_code)]
 mod parser;

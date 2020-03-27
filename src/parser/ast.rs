@@ -11,9 +11,10 @@ pub trait StmtVisitor {
     fn visit_block(&mut self, stmt: &Stmt);
     fn visit_if(&mut self, stmt: &Stmt);
     fn visit_while(&mut self, stmt: &Stmt);
+    fn visit_function(&mut self, stmt: &Stmt);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Expr(Box<Expr>),
     Print(Box<Expr>),
@@ -30,6 +31,12 @@ pub enum Stmt {
     While {
         condition: Box<Expr>,
         body: Box<Stmt>,
+    },
+    Function {
+        name: lexer::Token,
+        parameters: Option<Vec<lexer::Token>>,
+        body: Box<Stmt>,
+        ret: Option<Box<Expr>>
     }
 }
 
@@ -42,18 +49,19 @@ impl StmtData for Stmt {
             s @ Stmt::Block(_) => visitor.visit_block(s),
             s @ Stmt::If { .. } => visitor.visit_if(s),
             s @ Stmt::While { .. } => visitor.visit_while(s),
+            s @ Stmt::Function { .. } => visitor.visit_function(s),
         }
     }
 }
 
 pub trait ExprData {
-    fn accept<V: ExprVisitor>(&self, visitor: &mut V) -> V::Result;
+    fn accept<V: ExprVisitor>(&self, visitor: &mut V) -> Option<V::Result>;
 }
 
 pub trait ExprVisitor {
     type Result;
 
-    fn visit_expr(&mut self, expr: &Expr) -> Self::Result {
+    fn visit_expr(&mut self, expr: &Expr) -> Option<Self::Result> {
         match expr {
             Expr::L(l) => self.visit_literal(l),
             e @ Expr::Unary { .. } => self.visit_unary(e),
@@ -62,15 +70,17 @@ pub trait ExprVisitor {
             e @ Expr::Grouping { .. } => self.visit_grouping(e),
             e @ Expr::Assign { .. } => self.visit_assign(e),
             e @ Expr::Variable { .. } => self.visit_variable(e),
+            e @ Expr::Call { .. } => self.visit_call(e),
         }
     }
-    fn visit_literal(&mut self, expr: &Literal) -> Self::Result;
-    fn visit_unary(&mut self, expr: &Expr) -> Self::Result;
-    fn visit_binary(&mut self, expr: &Expr) -> Self::Result;
-    fn visit_logical(&mut self, expr: &Expr) -> Self::Result;
-    fn visit_grouping(&mut self, expr: &Expr) -> Self::Result;
-    fn visit_assign(&mut self, expr: &Expr) -> Self::Result;
-    fn visit_variable(&mut self, expr: &Expr) -> Self::Result;
+    fn visit_literal(&mut self, expr: &Literal) -> Option<Self::Result>;
+    fn visit_unary(&mut self, expr: &Expr) -> Option<Self::Result>;
+    fn visit_binary(&mut self, expr: &Expr) -> Option<Self::Result>;
+    fn visit_logical(&mut self, expr: &Expr) -> Option<Self::Result>;
+    fn visit_grouping(&mut self, expr: &Expr) -> Option<Self::Result>;
+    fn visit_assign(&mut self, expr: &Expr) -> Option<Self::Result>;
+    fn visit_variable(&mut self, expr: &Expr) -> Option<Self::Result>;
+    fn visit_call(&mut self, expr: &Expr) -> Option<Self::Result>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,7 +91,7 @@ pub enum Literal {
     Nil(()),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     L(Literal),
     Unary {
@@ -92,6 +102,10 @@ pub enum Expr {
         left: Box<Expr>,
         operator: lexer::Operator,
         right: Box<Expr>,
+    },
+    Call {
+        callee: Box<Expr>,
+        arguments: Vec<Expr>,
     },
     Logical {
         left: Box<Expr>,
@@ -111,7 +125,7 @@ pub enum Expr {
 }
 
 impl ExprData for Expr {
-    fn accept<V: ExprVisitor>(&self, visitor: &mut V) -> V::Result {
+    fn accept<V: ExprVisitor>(&self, visitor: &mut V) -> Option<V::Result> {
         match self {
             Expr::L(l) => visitor.visit_literal(l),
             e @ Expr::Unary { .. } => visitor.visit_unary(e),
@@ -120,6 +134,7 @@ impl ExprData for Expr {
             e @ Expr::Grouping { .. } => visitor.visit_grouping(e),
             e @ Expr::Assign { .. } => visitor.visit_assign(e),
             e @ Expr::Variable { .. } => visitor.visit_variable(e),
+            e @ Expr::Call { .. } => visitor.visit_call(e),
         }
     }
 }

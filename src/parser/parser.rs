@@ -2,8 +2,6 @@ use crate::lexer;
 use crate::lexer::{Operator, Token};
 use crate::parser::ast;
 use crate::parser::ast::Stmt;
-use crate::parser::ast::Stmt::{Block, Expr};
-use crate::parser::interpreter::Interpreter;
 
 pub struct Parser {
     tokens: Vec<lexer::Token>,
@@ -38,9 +36,15 @@ impl Parser {
             return self.while_stmt();
         } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::LeftBrace {
             self.current += 1;
-            return Block(self.block());
+            return Stmt::Block(self.block());
         }
         self.expr_stmt()
+    }
+
+    pub fn expr_stmt(&mut self) -> ast::Stmt {
+        let expr = self.expression();
+        self.consume(lexer::Token::Semicolon);
+        ast::Stmt::Expr(Box::new(expr))
     }
 
     pub fn for_stmt(&mut self) -> ast::Stmt {
@@ -78,7 +82,10 @@ impl Parser {
             }
 
             if let Some(condition) = condition {
-                body = Stmt::While { condition: Box::new(condition), body: Box::new(body) }
+                body = Stmt::While {
+                    condition: Box::new(condition),
+                    body: Box::new(body),
+                }
             }
 
             if let Some(initializer) = initializer {
@@ -89,6 +96,7 @@ impl Parser {
             panic!()
         }
     }
+
 
     pub fn if_stmt(&mut self) -> ast::Stmt {
         self.consume(Token::LeftParen);
@@ -140,6 +148,10 @@ impl Parser {
     }
 
     pub fn delaration(&mut self) -> ast::Stmt {
+        if self.tokens.get(self.current).unwrap().clone() == lexer::Token::Fun {
+            self.current += 1;
+            return self.func_decl("function");
+        }
         if self.tokens.get(self.current).unwrap().clone() == lexer::Token::Var {
             self.current += 1;
             return self.var_decl();
@@ -147,11 +159,30 @@ impl Parser {
         self.statement()
     }
 
-    pub fn expr_stmt(&mut self) -> ast::Stmt {
-        let expr = self.expression();
-        self.consume(lexer::Token::Semicolon);
-        ast::Stmt::Expr(Box::new(expr))
+    pub fn func_decl(&mut self, kind: &str) -> ast::Stmt {
+        if let lexer::Token::Identifier(name) = self.tokens.get(self.current).unwrap().clone() {
+            self.current += 1;
+            self.consume(lexer::Token::LeftParen);
+            let mut params = Vec::new();
+            if self.tokens.get(self.current).unwrap().clone() != lexer::Token::RightParen {
+                if params.len() >= 255 {
+                    panic!("too many args");
+                }
+                params.push(self.tokens.get(self.current).unwrap().clone());
+                self.current += 1;
+                while self.tokens.get(self.current).unwrap().clone() == lexer::Token::Comma {
+                    self.current += 1;
+                    params.push(self.tokens.get(self.current).unwrap().clone());
+                    self.current += 1;
+                }
+            }
+            self.consume(lexer::Token::RightParen);
+            let body = self.statement();
+            return ast::Stmt::Function { name: lexer::Token::Identifier(name), parameters: Some(params), body: Box::new(body), ret: None }
+        }
+        panic!("{:?}", self.tokens.get(self.current).unwrap().clone())
     }
+
 
     pub fn var_decl(&mut self) -> ast::Stmt {
         if let lexer::Token::Identifier(name) = self.tokens.get(self.current).unwrap().clone() {
@@ -339,7 +370,40 @@ impl Parser {
                 panic!()
             }
         } else {
-            self.primary()
+            self.call()
+        }
+    }
+
+    pub fn call(&mut self) -> ast::Expr {
+        let mut expr = self.primary();
+
+        loop {
+            if self.tokens.get(self.current).unwrap().clone() == lexer::Token::LeftParen {
+                self.current += 1;
+                expr = self.finish_call(expr)
+            } else {
+                break;
+            }
+        }
+        expr
+    }
+
+    pub fn finish_call(&mut self, callee: ast::Expr) -> ast::Expr {
+        let mut arguments = Vec::new();
+        if self.tokens.get(self.current).unwrap().clone() != lexer::Token::RightParen {
+            if arguments.len() >= 255 {
+                panic!("too many args");
+            }
+            arguments.push(self.expression());
+            while self.tokens.get(self.current).unwrap().clone() == lexer::Token::Comma {
+                self.current += 1;
+                arguments.push(self.expression());
+            }
+        }
+        self.consume(lexer::Token::RightParen);
+        ast::Expr::Call {
+            callee: Box::new(callee),
+            arguments,
         }
     }
 
@@ -453,7 +517,7 @@ mod tests {
             var a = 5;
             print a;
             a = a + 1;
-            print a;
+            print a + a;
         "#
         .chars()
         .collect();
@@ -467,8 +531,24 @@ mod tests {
     fn parse_for() {
         let input: Vec<char> = r#"
             for (var i = 0; i < 10; i = i + 1) {
+                var j = 2;
                 print i;
+                print j*i;
             }
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        println!("{:#?}", e);
+    }
+
+
+    #[test]
+    fn clock() {
+        let input: Vec<char> = r#"
+            clock();
         "#
             .chars()
             .collect();
@@ -478,4 +558,19 @@ mod tests {
         println!("{:#?}", e);
     }
 
+    #[test]
+    fn function() {
+        let input: Vec<char> = r#"
+            fun bob(a, b, c) {
+                var d = 1;
+                print a + b + c + d;
+            }
+        "#
+            .chars()
+            .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        println!("{:#?}", e);
+    }
 }

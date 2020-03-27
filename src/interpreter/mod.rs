@@ -1,21 +1,31 @@
-use crate::environment::Environment;
+use crate::environment::{Environment, Object};
+use crate::interpreter::callable::Clock;
 use crate::lexer;
 use crate::lexer::Operator;
-use crate::parser::ast::Literal::Nil;
 use crate::parser::ast::{Expr, ExprData, ExprVisitor, Literal, Stmt, StmtData, StmtVisitor};
-use pom::range::Bound::Excluded;
 use std::cell::RefCell;
-use std::io::Write;
 use std::option::Option::Some;
 use std::rc::Rc;
-use std::{thread, time};
+
+pub mod callable;
 
 pub struct Interpreter {
-    pub environment: Rc<RefCell<Environment>>,
+    environment: Rc<RefCell<Environment>>,
+    globals: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
-    pub fn evaluate(&mut self, expr: &Expr) -> Literal {
+    pub fn new() -> Self {
+        let mut globals = Environment::new();
+        globals.define("clock", Object::C(Rc::new(Clock {})));
+        let globals = Rc::new(RefCell::new(globals));
+        Self {
+            environment: globals.clone(),
+            globals: globals,
+        }
+    }
+
+    pub fn evaluate(&mut self, expr: &Expr) -> Option<Object> {
         expr.accept(self)
     }
 
@@ -40,25 +50,29 @@ impl Interpreter {
 }
 
 impl ExprVisitor for Interpreter {
-    type Result = Literal;
+    type Result = Object;
 
-    fn visit_literal(&mut self, expr: &Literal) -> Self::Result {
-        (*expr).clone()
+    fn visit_literal(&mut self, expr: &Literal) -> Option<Self::Result> {
+        Some(Object::L(expr.clone()))
     }
 
-    fn visit_unary(&mut self, expr: &Expr) -> Self::Result {
+    fn visit_unary(&mut self, expr: &Expr) -> Option<Self::Result> {
         if let Expr::Unary { operator, right } = expr {
             let right = self.evaluate(right);
-            return if *operator == Operator::Minus {
-                match right {
-                    Literal::Float(l) => Literal::Float(-l),
-                    _ => panic!("{:?}", right),
-                }
+            if *operator == Operator::Minus {
+                return right.map(|r|
+                    match r {
+                        Object::L(Literal::Float(l)) => Object::L(Literal::Float(-l)),
+                        _ => panic!("{:?}", r)
+                    }
+                )
             } else if *operator == Operator::Not {
-                match right {
-                    Literal::Bool(b) => Literal::Bool(!b),
-                    _ => panic!("{:?}", right),
-                }
+                return right.map(|r|
+                    match r {
+                        Object::L(Literal::Bool(b)) => Object::L(Literal::Bool(!b)),
+                        _ => panic!("{:?}", r)
+                    }
+                )
             } else {
                 panic!("{:?}", operator)
             };
@@ -66,24 +80,24 @@ impl ExprVisitor for Interpreter {
         panic!("{:?}", expr)
     }
 
-    fn visit_binary(&mut self, expr: &Expr) -> Self::Result {
+    fn visit_binary(&mut self, expr: &Expr) -> Option<Self::Result> {
         if let Expr::Binary {
             left,
             operator,
             right,
         } = expr
         {
-            if let Literal::String(left) = self.evaluate(left) {
-                if let Literal::String(right) = self.evaluate(right) {
-                    return match operator {
+            if let Some(Object::L(Literal::String(left))) = self.evaluate(left) {
+                if let Some(Object::L(Literal::String(right))) = self.evaluate(right) {
+                    return Some(Object::L(match operator {
                         Operator::Plus => Literal::String(left + right.as_str()),
                         _ => panic!("{:?}", operator),
-                    };
+                    }));
                 }
             }
-            if let Literal::Float(left) = self.evaluate(left) {
-                if let Literal::Float(right) = self.evaluate(right) {
-                    return match operator {
+            if let Some(Object::L(Literal::Float(left))) = self.evaluate(left) {
+                if let Some(Object::L(Literal::Float(right))) = self.evaluate(right) {
+                    return Some(Object::L(match operator {
                         Operator::Minus => Literal::Float(left - right),
                         Operator::Plus => Literal::Float(left + right),
                         Operator::Slash => Literal::Float(left / right),
@@ -97,51 +111,69 @@ impl ExprVisitor for Interpreter {
                         Operator::And => Literal::Bool(left > 0.0 && right > 0.0),
                         Operator::Or => Literal::Bool(left > 0.0 || right > 0.0),
                         _ => panic!("{:?}", operator),
-                    };
+                    }));
                 }
             }
         }
         panic!("{:?}", expr)
     }
 
-    fn visit_logical(&mut self, expr: &Expr) -> Self::Result {
+    fn visit_logical(&mut self, expr: &Expr) -> Option<Self::Result> {
         if let Expr::Logical {
             left,
             operator,
             right,
         } = expr
         {
-            if let Literal::Bool(left) = self.evaluate(left) {
-                if let Literal::Bool(right) = self.evaluate(right) {
-                    return match operator {
+            if let Some(Object::L(Literal::Bool(left))) = self.evaluate(left) {
+                if let Some(Object::L(Literal::Bool(right))) = self.evaluate(right) {
+                    return Some(Object::L(match operator {
                         Operator::And => Literal::Bool(left && right),
                         Operator::Or => Literal::Bool(left || right),
                         _ => panic!("{:?}", operator),
-                    };
+                    }));
                 }
             }
         }
         panic!("{:?}", expr)
     }
 
-    fn visit_grouping(&mut self, expr: &Expr) -> Self::Result {
+    fn visit_grouping(&mut self, expr: &Expr) -> Option<Self::Result> {
         unimplemented!()
     }
 
-    fn visit_assign(&mut self, expr: &Expr) -> Self::Result {
+    fn visit_assign(&mut self, expr: &Expr) -> Option<Self::Result> {
         if let Expr::Assign { name, value } = expr {
             if let lexer::Token::Identifier(name) = name {
                 let value = self.evaluate(value);
-                self.environment.borrow_mut().assign(name, value.clone());
+                self.environment
+                    .borrow_mut()
+                    .assign(name, value.clone().unwrap());
                 return value;
             }
         }
         panic!("{:?}", expr)
     }
 
-    fn visit_variable(&mut self, expr: &Expr) -> Self::Result {
+    fn visit_variable(&mut self, expr: &Expr) -> Option<Self::Result> {
         if let Expr::Variable { name } = expr {
-            return self.environment.borrow().get(name);
+            return Some(self.environment.borrow_mut().get(name))
+        }
+        panic!("{:?}", expr)
+    }
+
+    fn visit_call(&mut self, expr: &Expr) -> Option<Self::Result> {
+        if let Expr::Call { callee, arguments } = expr {
+            if let Some(Object::C(callee)) = self.evaluate(callee) {
+                let mut args = Vec::new();
+                for argument in arguments {
+                    args.push(self.evaluate(argument))
+                }
+                if args.len() != callee.arity() {
+                    panic!("wrong number of args {:?} {:?}", arguments.len(), callee.arity())
+                }
+                return callee.call(self, args.into_iter().map(|o| o.unwrap()).collect());
+            }
         }
         panic!("{:?}", expr)
     }
@@ -158,11 +190,12 @@ impl StmtVisitor for Interpreter {
 
     fn visit_print_stmt(&mut self, stmt: &Stmt) {
         if let Stmt::Print(expr) = stmt {
-            match self.evaluate(expr) {
-                Literal::Float(l) => println!("{:?}", l),
-                Literal::Bool(l) => println!("{:?}", l),
-                Literal::String(l) => println!("{:?}", l),
-                Literal::Nil(l) => println!("{:?}", l),
+            match self.evaluate(expr).unwrap() {
+                Object::L(Literal::Float(l)) => println!("{:?}", l),
+                Object::L(Literal::Bool(l)) => println!("{:?}", l),
+                Object::L(Literal::String(l)) => println!("{:?}", l),
+                Object::L(Literal::Nil(l)) => println!("{:?}", l),
+                Object::C(c) => println!("{:?}", c)
             }
         } else {
             panic!("{:?}", stmt)
@@ -173,10 +206,11 @@ impl StmtVisitor for Interpreter {
         if let Stmt::Variable { name, initializer } = stmt {
             if let lexer::Token::Identifier(name) = name {
                 let initializer = initializer.as_ref();
-                let mut value = Literal::Nil(());
+                let mut value = Object::L(Literal::Nil(()));
                 if *initializer != Expr::L(Literal::Nil(())) {
-                    value = self.evaluate(initializer);
+                    value = self.evaluate(initializer).unwrap();
                 }
+
                 self.environment.borrow_mut().define(name, value);
                 return;
             }
@@ -203,7 +237,7 @@ impl StmtVisitor for Interpreter {
             else_branch,
         } = stmt
         {
-            if let Literal::Bool(true) = self.evaluate(condition) {
+            if let Some(Object::L(Literal::Bool(true))) = self.evaluate(condition) {
                 self.execute(then_branch)
             } else if let Some(else_branch) = else_branch {
                 self.execute(else_branch)
@@ -214,12 +248,23 @@ impl StmtVisitor for Interpreter {
     }
 
     fn visit_while(&mut self, stmt: &Stmt) {
-        let ten_millis = time::Duration::from_millis(10);
         if let Stmt::While { condition, body } = stmt {
-            while let Literal::Bool(true) = self.evaluate(condition) {
-                std::io::stdout().lock().flush();
+            while let Some(Object::L(Literal::Bool(true))) = self.evaluate(condition) {
                 self.execute(body);
-                thread::sleep(ten_millis);
+            }
+        } else {
+            panic!("{:?}", stmt);
+        }
+    }
+
+    fn visit_function(&mut self, stmt: &Stmt) {
+        if let Stmt::Function { name, parameters, ..} = stmt {
+            if let lexer::Token::Identifier(name_str) = name {
+                let s = stmt.clone();
+                let f = callable::Function {
+                    declaration: s
+                };
+                self.environment.borrow_mut().define(name_str, Object::C(Rc::new(f)))
             }
         } else {
             panic!("{:?}", stmt);
@@ -229,10 +274,9 @@ impl StmtVisitor for Interpreter {
 
 #[cfg(test)]
 mod tests {
-    use crate::environment::Environment;
+    use crate::interpreter::Interpreter;
     use crate::lexer::{lexer, Operator, Token};
     use crate::parser::ast::{Expr, Literal, Stmt};
-    use crate::parser::interpreter::Interpreter;
     use crate::parser::parser::Parser;
 
     #[test]
@@ -245,10 +289,7 @@ mod tests {
             right: Box::new(Expr::L(Literal::String(y))),
         });
 
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(&[Stmt::Expr(expr)]);
+        Interpreter::new().interpret(&[Stmt::Expr(expr)]);
 
         let x = 1.0;
         let y = 2.0;
@@ -258,17 +299,12 @@ mod tests {
             right: Box::new(Expr::L(Literal::Float(y))),
         });
 
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(&[Stmt::Expr(expr)]);
+        Interpreter::new().interpret(&[Stmt::Expr(expr)]);
     }
 
     #[test]
     fn interpret_var_stmt() {
-        let mut i = Interpreter {
-            environment: Default::default(),
-        };
+        let mut i = Interpreter::new();
 
         let name = Token::Identifier("z".to_string());
         let st = Stmt::Variable {
@@ -299,10 +335,7 @@ mod tests {
             right: Box::new(Expr::L(Literal::String(y))),
         }));
 
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(&[print]);
+        Interpreter::new().interpret(&[print]);
     }
 
     #[test]
@@ -316,10 +349,7 @@ mod tests {
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(e.as_ref());
+        Interpreter::new().interpret(e.as_ref());
     }
 
     #[test]
@@ -350,10 +380,7 @@ mod tests {
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(e.as_ref());
+        Interpreter::new().interpret(e.as_ref());
     }
 
     #[test]
@@ -383,10 +410,7 @@ mod tests {
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(e.as_ref());
+        Interpreter::new().interpret(e.as_ref());
     }
 
     #[test]
@@ -404,10 +428,7 @@ mod tests {
         let mut p = Parser::new(tokens);
         let e = p.parse();
         println!("{:#?}", e);
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(e.as_ref());
+        Interpreter::new().interpret(e.as_ref());
     }
 
     #[test]
@@ -426,10 +447,7 @@ mod tests {
         let mut p = Parser::new(tokens);
         let e = p.parse();
         println!("{:?}", e);
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(e.as_ref());
+        Interpreter::new().interpret(e.as_ref());
     }
 
     #[test]
@@ -445,10 +463,7 @@ mod tests {
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(e.as_ref());
+        Interpreter::new().interpret(e.as_ref());
     }
 
     #[test]
@@ -467,18 +482,31 @@ mod tests {
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(e.as_ref());
+        Interpreter::new().interpret(e.as_ref());
     }
-
 
     #[test]
     fn intepret_for() {
         let input: Vec<char> = r#"
             for (var i = 0; i < 10; i = i + 1) {
-                print i;
+                var j = 2;
+                print j*i;
+            }
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        Interpreter::new().interpret(e.as_ref());
+    }
+
+    #[test]
+    fn function() {
+        let input: Vec<char> = r#"
+            fun bob(a, b, c) {
+                var d = 1;
+                print a + b + c + d;
             }
         "#
             .chars()
@@ -486,9 +514,6 @@ mod tests {
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();
-        (Interpreter {
-            environment: Default::default(),
-        })
-            .interpret(e.as_ref());
+        Interpreter::new().interpret(e.as_ref());
     }
 }

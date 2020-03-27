@@ -1,13 +1,10 @@
 pub mod ast;
-mod ast_printer;
-pub mod interpreter;
 pub mod parser;
 
 #[cfg(test)]
 mod tests {
-    use crate::environment::Environment;
+    use crate::interpreter::Interpreter;
     use crate::lexer;
-    use crate::parser::interpreter::Interpreter;
     use crate::parser::parser;
 
     #[test]
@@ -21,9 +18,6 @@ mod tests {
         .collect();
         let tokens = lexer::lexer().parse(&input).unwrap();
         let mut p = parser::Parser::new(tokens);
-        (Interpreter {
-            environment: Default::default(),
-        })
-        .interpret(&p.parse());
+        Interpreter::new().interpret(&p.parse());
     }
 }
