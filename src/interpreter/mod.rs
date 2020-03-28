@@ -1,27 +1,32 @@
-use crate::environment::{Environment, Object};
-use crate::interpreter::callable::Clock;
+use crate::interpreter::callable::{Clock, Function};
 use crate::lexer;
 use crate::lexer::Operator;
 use crate::parser::ast::{Expr, ExprData, ExprVisitor, Literal, Stmt, StmtData, StmtVisitor};
+use crate::symbol_table::{Object, SymbolTable};
+use either::Either;
+use either::Either::{Left, Right};
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::option::Option::Some;
 use std::rc::Rc;
 
 pub mod callable;
 
 pub struct Interpreter {
-    environment: Rc<RefCell<Environment>>,
-    globals: Rc<RefCell<Environment>>,
+    symbol_table: Rc<RefCell<SymbolTable>>,
+    globals: Rc<RefCell<SymbolTable>>,
+    ret: Option<Either<(), Object>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        let mut globals = Environment::new();
+        let mut globals = SymbolTable::new();
         globals.define("clock", Object::C(Rc::new(Clock {})));
         let globals = Rc::new(RefCell::new(globals));
         Self {
-            environment: globals.clone(),
-            globals: globals,
+            symbol_table: globals.clone(),
+            globals,
+            ret: None,
         }
     }
 
@@ -36,16 +41,18 @@ impl Interpreter {
     }
 
     pub fn execute(&mut self, stmt: &Stmt) {
-        stmt.accept(self)
+        if self.ret.is_none() {
+            stmt.accept(self)
+        }
     }
 
-    pub fn execute_block(&mut self, stmts: &[Stmt], environment: Environment) {
+    pub fn execute_block(&mut self, stmts: &[Stmt], environment: SymbolTable) {
         let previous_env =
-            std::mem::replace(&mut self.environment, Rc::new(RefCell::new(environment)));
+            std::mem::replace(&mut self.symbol_table, Rc::new(RefCell::new(environment)));
         for stmt in stmts {
             self.execute(stmt)
         }
-        std::mem::replace(&mut self.environment, previous_env);
+        std::mem::replace(&mut self.symbol_table, previous_env);
     }
 }
 
@@ -142,7 +149,7 @@ impl ExprVisitor for Interpreter {
         if let Expr::Assign { name, value } = expr {
             if let lexer::Token::Identifier(name) = name {
                 let value = self.evaluate(value);
-                self.environment
+                self.symbol_table
                     .borrow_mut()
                     .assign(name, value.clone().unwrap());
                 return value;
@@ -153,7 +160,9 @@ impl ExprVisitor for Interpreter {
 
     fn visit_variable(&mut self, expr: &Expr) -> Option<Self::Result> {
         if let Expr::Variable { name } = expr {
-            return Some(self.environment.borrow_mut().get(name));
+            if let lexer::Token::Identifier(name) = name {
+                return Some(self.symbol_table.borrow_mut().get(name));
+            }
         }
         panic!("{:?}", expr)
     }
@@ -188,7 +197,7 @@ impl StmtVisitor for Interpreter {
         }
     }
 
-    fn visit_print_stmt(&mut self, stmt: &Stmt) {
+    fn visit_print(&mut self, stmt: &Stmt) {
         if let Stmt::Print(expr) = stmt {
             match self.evaluate(expr).unwrap() {
                 Object::L(Literal::Float(l)) => println!("{:?}", l),
@@ -202,7 +211,7 @@ impl StmtVisitor for Interpreter {
         }
     }
 
-    fn visit_var_stmt(&mut self, stmt: &Stmt) {
+    fn visit_var_decl(&mut self, stmt: &Stmt) {
         if let Stmt::Variable { name, initializer } = stmt {
             if let lexer::Token::Identifier(name) = name {
                 let initializer = initializer.as_ref();
@@ -211,7 +220,7 @@ impl StmtVisitor for Interpreter {
                     value = self.evaluate(initializer).unwrap();
                 }
 
-                self.environment.borrow_mut().define(name, value);
+                self.symbol_table.borrow_mut().define(name, value);
                 return;
             }
         }
@@ -222,9 +231,9 @@ impl StmtVisitor for Interpreter {
         if let Stmt::Block(stmts) = stmt {
             self.execute_block(
                 stmts,
-                Environment {
+                SymbolTable {
                     values: Default::default(),
-                    enclosing: Some(self.environment.clone()),
+                    enclosing: Some(self.symbol_table.clone()),
                 },
             )
         }
@@ -257,20 +266,34 @@ impl StmtVisitor for Interpreter {
         }
     }
 
-    fn visit_function(&mut self, stmt: &Stmt) {
+    fn visit_function_decl(&mut self, stmt: &Stmt) {
         if let Stmt::Function {
             name, parameters, ..
         } = stmt
         {
-            if let lexer::Token::Identifier(name_str) = name {
-                let s = stmt.clone();
-                let f = callable::Function { declaration: s };
-                self.environment
+            if let lexer::Token::Identifier(name) = name {
+                let mut f = callable::Function {
+                    declaration: stmt.clone(),
+                    closure: self.symbol_table.borrow().deep_copy(),
+                };
+                f.closure.define(name, Object::C(Rc::new(f.clone())));
+                self.symbol_table
                     .borrow_mut()
-                    .define(name_str, Object::C(Rc::new(f)))
+                    .define(name, Object::C(Rc::new(f)));
             }
         } else {
             panic!("{:?}", stmt);
+        }
+    }
+
+    fn visit_return(&mut self, stmt: &Stmt) {
+        if let Stmt::Return(r) = stmt {
+            match r {
+                None => self.ret = Some(Left(())),
+                Some(r) => self.ret = Some(Right(self.evaluate(r).unwrap())),
+            }
+        } else {
+            panic!("{:?}", stmt)
         }
     }
 }
@@ -511,6 +534,43 @@ mod tests {
                 var d = 1;
                 print a + b + c + d;
             }
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        Interpreter::new().interpret(e.as_ref());
+    }
+
+    #[test]
+    fn function_return() {
+        let input: Vec<char> = r#"
+            fun bob(a, b, c) {
+                var d = 1;
+                return d;
+            }
+
+            print bob(1,2,3);
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        Interpreter::new().interpret(e.as_ref());
+    }
+
+    #[test]
+    fn function_early_return() {
+        let input: Vec<char> = r#"
+            fun bob(a, b, c) {
+                print 5;
+                return 10;
+                print "can't reach";
+            }
+
+            print bob(1,2,3);
         "#
         .chars()
         .collect();

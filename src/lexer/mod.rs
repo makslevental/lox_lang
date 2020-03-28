@@ -216,6 +216,13 @@ pub fn lexer<'a>() -> Parser<'a, char, Vec<Token>> {
     .repeat(0..)
 }
 
+// impl std::convert::From<String> for Token {
+//     fn from(s: String) -> Self {
+//         let input: Vec<char> = s.chars().collect();
+//         lexer().parse(&input).unwrap().pop().unwrap()
+//     }
+// }
+//
 #[cfg(test)]
 mod tests {
     use super::lexer;

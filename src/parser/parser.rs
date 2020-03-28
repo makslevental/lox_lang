@@ -31,6 +31,9 @@ impl Parser {
         } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::Print {
             self.current += 1;
             return self.print();
+        } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::Return {
+            self.current += 1;
+            return self.return_stmt();
         } else if self.tokens.get(self.current).unwrap().clone() == lexer::Token::While {
             self.current += 1;
             return self.while_stmt();
@@ -113,7 +116,20 @@ impl Parser {
         ast::Stmt::If {
             condition: Box::new(condition),
             then_branch: Box::new(then_branch),
-            else_branch: else_branch,
+            else_branch,
+        }
+    }
+
+    pub fn return_stmt(&mut self) -> ast::Stmt {
+        if let Some(token) = self.tokens.get(self.current) {
+            let mut val = ast::Stmt::Return(None);
+            if token != &lexer::Token::Semicolon {
+                val = ast::Stmt::Return(Some(Box::new(self.expression())));
+            }
+            self.consume(lexer::Token::Semicolon);
+            return val;
+        } else {
+            panic!("{:?}", self.tokens.get(self.current))
         }
     }
 
@@ -566,6 +582,7 @@ mod tests {
             fun bob(a, b, c) {
                 var d = 1;
                 print a + b + c + d;
+                return d;
             }
         "#
         .chars()

@@ -1,7 +1,7 @@
-use crate::environment::{Environment, Object};
 use crate::interpreter::Interpreter;
 use crate::lexer;
 use crate::parser::ast::{Literal, Stmt};
+use crate::symbol_table::{Object, SymbolTable};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
@@ -52,9 +52,10 @@ impl fmt::Display for Clock {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub declaration: Stmt,
+    pub closure: SymbolTable,
 }
 
 impl Callable for Function {
@@ -71,14 +72,8 @@ impl Callable for Function {
             ..
         } = self.declaration
         {
-            let mut global_values = HashMap::new();
-            for (name, object) in interpreter.globals.borrow().values.borrow().iter() {
-                global_values.insert(name.to_owned(), object.clone());
-            }
-            let mut env = Environment {
-                enclosing: None,
-                values: Rc::new(RefCell::new(global_values)),
-            };
+            let mut env = self.closure.to_owned();
+            // println!("{:#?}", env);
             if let Some(parameters) = parameters {
                 for (i, param) in parameters.iter().enumerate() {
                     if let lexer::Token::Identifier(param) = param {
@@ -90,7 +85,7 @@ impl Callable for Function {
 
             if let Stmt::Block(body) = body.clone().deref() {
                 interpreter.execute_block(body, env);
-                return None;
+                interpreter.ret.take().map_or(None, |r| r.right())
             } else {
                 panic!()
             }
@@ -141,13 +136,14 @@ mod tests {
     fn count() {
         let input: Vec<char> = r#"
             fun count(n) {
-              if (n > 1) count(n - 1);
+              print n;
+              if (n > 1) {
+                count(n - 1);
+              }
               print n;
             }
 
-            count(3);
-            print count;
-            print clock;
+            count(5);
         "#
         .chars()
         .collect();
@@ -156,6 +152,53 @@ mod tests {
         let e = p.parse();
         let mut i = Interpreter::new();
         i.interpret(e.as_ref());
-        println!("{:#?}", i.environment)
+    }
+
+    #[test]
+    fn closure() {
+        let input: Vec<char> = r#"
+            fun makeCounter() {
+              var i = 0;
+              fun count() {
+                i = i + 1;
+                print i;
+              }
+
+              count();
+              count();
+              count();
+              return count;
+            }
+
+            var counter = makeCounter();
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        let mut i = Interpreter::new();
+        i.interpret(e.as_ref());
+    }
+
+    #[test]
+    fn function_global_mut() {
+        let input: Vec<char> = r#"
+            var d = 4;
+            fun bob() {
+                print d;
+                d = 5;
+                print d;
+            }
+
+            bob();
+            print d;
+        "#
+        .chars()
+        .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        Interpreter::new().interpret(e.as_ref());
     }
 }

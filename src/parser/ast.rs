@@ -6,12 +6,13 @@ pub trait StmtData {
 
 pub trait StmtVisitor {
     fn visit_expr_stmt(&mut self, stmt: &Stmt);
-    fn visit_print_stmt(&mut self, stmt: &Stmt);
-    fn visit_var_stmt(&mut self, stmt: &Stmt);
+    fn visit_print(&mut self, stmt: &Stmt);
+    fn visit_var_decl(&mut self, stmt: &Stmt);
     fn visit_block(&mut self, stmt: &Stmt);
     fn visit_if(&mut self, stmt: &Stmt);
     fn visit_while(&mut self, stmt: &Stmt);
-    fn visit_function(&mut self, stmt: &Stmt);
+    fn visit_function_decl(&mut self, stmt: &Stmt);
+    fn visit_return(&mut self, stmt: &Stmt);
 }
 
 #[derive(Debug, Clone)]
@@ -38,18 +39,20 @@ pub enum Stmt {
         body: Box<Stmt>,
         ret: Option<Box<Expr>>,
     },
+    Return(Option<Box<Expr>>),
 }
 
 impl StmtData for Stmt {
     fn accept<V: StmtVisitor>(&self, visitor: &mut V) {
         match self {
             s @ Stmt::Expr(_) => visitor.visit_expr_stmt(s),
-            s @ Stmt::Print(_) => visitor.visit_print_stmt(s),
-            s @ Stmt::Variable { .. } => visitor.visit_var_stmt(s),
+            s @ Stmt::Print(_) => visitor.visit_print(s),
+            s @ Stmt::Variable { .. } => visitor.visit_var_decl(s),
             s @ Stmt::Block(_) => visitor.visit_block(s),
             s @ Stmt::If { .. } => visitor.visit_if(s),
             s @ Stmt::While { .. } => visitor.visit_while(s),
-            s @ Stmt::Function { .. } => visitor.visit_function(s),
+            s @ Stmt::Function { .. } => visitor.visit_function_decl(s),
+            s @ Stmt::Return(_) => visitor.visit_return(s),
         }
     }
 }

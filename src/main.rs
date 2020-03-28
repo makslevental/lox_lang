@@ -1,8 +1,10 @@
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate downcast;
 
 #[allow(dead_code)]
-mod environment;
+mod symbol_table;
 #[allow(dead_code)]
 mod interpreter;
 #[allow(dead_code)]

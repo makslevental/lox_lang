@@ -9,3 +9,5 @@ edition = "2018"
 [dependencies]
 pom = "3.1.0"
 lazy_static = "1.4.0"
+either = "1.5.3"
+downcast = "0.10.0"
