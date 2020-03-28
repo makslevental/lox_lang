@@ -14,7 +14,9 @@ pub enum Object {
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     pub enclosing: Option<Rc<RefCell<SymbolTable>>>,
+    // TODO: max
     // i'm allocating too many things. this needs to be Rc<RefCell<Object>>
+    // count() test still doesn't work. Function creates a loop
     pub values: Rc<RefCell<HashMap<String, Object>>>,
 }
 
