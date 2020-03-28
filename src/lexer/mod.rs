@@ -161,8 +161,9 @@ fn two_char<'a>() -> Parser<'a, char, Token> {
         | seq(&comment).map(|_| Token::Comment)
 }
 
-fn alpha_literal<'a>() -> Parser<'a, char, Token> {
-    is_a(|ch: char| ch.is_alphabetic()).repeat(1..).map(|lit| {
+fn alpha_num_literal<'a>() -> Parser<'a, char, Token> {
+    -is_a(|ch: char| ch.is_alphabetic()) *
+    is_a(|ch: char| ch.is_alphanumeric()).repeat(1..).map(|lit| {
         let lit_str: String = lit.into_iter().collect();
         match lit_str.as_str() {
             "and" => Token::O(Operator::And),
@@ -211,7 +212,7 @@ fn string<'a>() -> Parser<'a, char, Token> {
 
 pub fn lexer<'a>() -> Parser<'a, char, Vec<Token>> {
     (whitespace().opt()
-        * (alpha_literal() | float_literal() | int_literal() | two_char() | one_char() | string())
+        * (alpha_num_literal() | float_literal() | int_literal() | two_char() | one_char() | string())
         - whitespace().opt())
     .repeat(0..)
 }

@@ -76,7 +76,7 @@ impl Callable for Function {
                 enclosing: None,
                 values: Rc::new(RefCell::new(Default::default())),
             };
-            let mut env = self.closure.to_owned();
+            let mut env = self.closure.deep_copy();
             if let Some(parameters) = parameters {
                 for (i, param) in parameters.iter().enumerate() {
                     if let lexer::Token::Identifier(param) = param {
@@ -90,12 +90,13 @@ impl Callable for Function {
             }
 
             if let Stmt::Block(body) = body.clone().deref() {
-                interpreter.execute_block(body, env);
-                for (name, obj) in rec_existing.values.borrow().iter() {
+                let ret_env = interpreter.execute_block(body, env);
+                let names: Vec<String> = self.closure.values.borrow().keys().map(|k| String::from(k)).collect();
+                for key in names {
                     self.closure
                         .values
                         .borrow_mut()
-                        .insert(name.to_string(), obj.to_owned());
+                        .insert(key.to_string(), ret_env.get(&key));
                 }
                 interpreter.ret.take().map_or(None, |r| r.right())
             } else {
@@ -148,14 +149,11 @@ mod tests {
     fn count() {
         let input: Vec<char> = r#"
             fun count(n) {
-              print n;
-              if (n > 1) {
-                count(n - 1);
-              }
+              if (n > 1) count(n - 1);
               print n;
             }
 
-            count(5);
+            count(3);
         "#
         .chars()
         .collect();
@@ -176,13 +174,12 @@ mod tests {
                 print i;
               }
 
-              count();
-              count();
-              count();
               return count;
             }
 
             var counter = makeCounter();
+            counter();
+            counter();
         "#
         .chars()
         .collect();

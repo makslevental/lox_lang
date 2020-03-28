@@ -46,13 +46,13 @@ impl Interpreter {
         }
     }
 
-    pub fn execute_block(&mut self, stmts: &[Stmt], environment: SymbolTable) {
+    pub fn execute_block(&mut self, stmts: &[Stmt], environment: SymbolTable) -> SymbolTable {
         let previous_env =
             std::mem::replace(&mut self.symbol_table, Rc::new(RefCell::new(environment)));
         for stmt in stmts {
             self.execute(stmt)
         }
-        std::mem::replace(&mut self.symbol_table, previous_env);
+        std::mem::replace(&mut self.symbol_table, previous_env).borrow_mut().deep_copy()
     }
 }
 
@@ -235,7 +235,7 @@ impl StmtVisitor for Interpreter {
                     values: Default::default(),
                     enclosing: Some(self.symbol_table.clone()),
                 },
-            )
+            );
         }
     }
 
@@ -574,6 +574,26 @@ mod tests {
         "#
         .chars()
         .collect();
+        let tokens = lexer().parse(&input).unwrap();
+        let mut p = Parser::new(tokens);
+        let e = p.parse();
+        Interpreter::new().interpret(e.as_ref());
+    }
+
+    #[test]
+    fn fibonacci() {
+        let input: Vec<char> = r#"
+            fun fibonacci(n) {
+              if (n <= 1) return n;
+              var f1 = fibonacci(n - 1);
+              var f2 = fibonacci(n - 2);
+              return f1 + f2;
+            }
+
+            print fibonacci(10);
+        "#
+            .chars()
+            .collect();
         let tokens = lexer().parse(&input).unwrap();
         let mut p = Parser::new(tokens);
         let e = p.parse();

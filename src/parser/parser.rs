@@ -239,8 +239,9 @@ impl Parser {
                     name,
                     value: Box::new(value),
                 };
+            } else {
+                panic!("{:?} {:?}", expr, value)
             }
-            panic!()
         }
         expr
     }
