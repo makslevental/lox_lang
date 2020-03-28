@@ -72,12 +72,18 @@ impl Callable for Function {
             ..
         } = self.declaration
         {
+            let mut rec_existing = SymbolTable {
+                enclosing: None,
+                values: Rc::new(RefCell::new(Default::default())),
+            };
             let mut env = self.closure.to_owned();
-            // println!("{:#?}", env);
             if let Some(parameters) = parameters {
                 for (i, param) in parameters.iter().enumerate() {
                     if let lexer::Token::Identifier(param) = param {
                         let arg = arguments.get(i).unwrap();
+                        if env.exists(param) {
+                            rec_existing.define(param.as_str(), arg.clone());
+                        }
                         env.define(param.as_str(), arg.clone());
                     }
                 }
@@ -85,6 +91,12 @@ impl Callable for Function {
 
             if let Stmt::Block(body) = body.clone().deref() {
                 interpreter.execute_block(body, env);
+                for (name, obj) in rec_existing.values.borrow().iter() {
+                    self.closure
+                        .values
+                        .borrow_mut()
+                        .insert(name.to_string(), obj.to_owned());
+                }
                 interpreter.ret.take().map_or(None, |r| r.right())
             } else {
                 panic!()

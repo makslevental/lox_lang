@@ -14,9 +14,6 @@ pub enum Object {
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     pub enclosing: Option<Rc<RefCell<SymbolTable>>>,
-    // TODO: max
-    // i'm allocating too many things. this needs to be Rc<RefCell<Object>>
-    // count() test still doesn't work. Function creates a loop
     pub values: Rc<RefCell<HashMap<String, Object>>>,
 }
 
@@ -30,6 +27,10 @@ impl SymbolTable {
 
     pub fn define(&mut self, name: &str, value: Object) {
         self.values.borrow_mut().insert(name.to_owned(), value);
+    }
+
+    pub fn exists(&mut self, name: &str) -> bool {
+        self.values.borrow().contains_key(name)
     }
 
     pub fn get(&self, name: &str) -> Object {
